@@ -1,5 +1,6 @@
 ﻿using AxMSTSCLib;
 using mRemoteNG.App;
+using mRemoteNG.Connection.Credentials;
 using mRemoteNG.Messages;
 using mRemoteNG.Properties;
 using mRemoteNG.Resources.Language;
@@ -9,6 +10,7 @@ using mRemoteNG.UI;
 using mRemoteNG.UI.Forms;
 using mRemoteNG.UI.Tabs;
 using mRemoteNG.Security;
+using mRemoteNG.Security.WindowsCredentialManager;
 using MSTSCLib;
 using System;
 using System.Collections.Generic;
@@ -39,6 +41,7 @@ namespace mRemoteNG.Connection.Protocol.RDP
         protected ConnectionInfo connectionInfo;
         protected Version RdpVersion;
         private readonly DisplayProperties _displayProperties;
+        private readonly ICredentialResolver _credentialResolver;
         protected readonly FrmMain _frmMain = FrmMain.Default;
         protected bool loginComplete;
         private bool _alertOnIdleDisconnect;
@@ -127,7 +130,13 @@ namespace mRemoteNG.Connection.Protocol.RDP
         #region Constructors
 
         public RdpProtocol()
+            : this(new ConnectionCredentialResolver(WindowsCredentialManager.Instance))
         {
+        }
+
+        internal RdpProtocol(ICredentialResolver credentialResolver)
+        {
+            _credentialResolver = credentialResolver ?? throw new ArgumentNullException(nameof(credentialResolver));
             _displayProperties = new DisplayProperties();
             tmrReconnect.Elapsed += tmrReconnect_Elapsed;
         }
@@ -525,7 +534,8 @@ namespace mRemoteNG.Connection.Protocol.RDP
             {
                 ExternalCredentialProvider.DelineaSecretServer or
                 ExternalCredentialProvider.ClickstudiosPasswordState or
-                ExternalCredentialProvider.OnePassword => info.RDGatewayExternalCredentialProvider,
+                ExternalCredentialProvider.OnePassword or
+                ExternalCredentialProvider.WindowsCredentialManager => info.RDGatewayExternalCredentialProvider,
                 ExternalCredentialProvider.VaultOpenbao when info.ExternalCredentialProvider == ExternalCredentialProvider.VaultOpenbao => ExternalCredentialProvider.VaultOpenbao,
                 ExternalCredentialProvider.None when mode == RDGatewayUseConnectionCredentials.ExternalCredentialProvider => info.ExternalCredentialProvider,
                 _ => ExternalCredentialProvider.None
@@ -572,81 +582,30 @@ namespace mRemoteNG.Connection.Protocol.RDP
                     {
                         _rdpClient.TransportSettings2.GatewayCredSharing = 0;
 
-                            string gwu = connectionInfo.RDGatewayUsername;
-                            string gwp = connectionInfo.RDGatewayPassword;
-                            string gwd = connectionInfo.RDGatewayDomain;
-                            string pkey = "";
+                        ExternalConnectors.OP.OnePasswordRead gatewayOnePasswordRead = _onePasswordGatewayRead;
+                        _onePasswordGatewayRead = null;
 
-                        ExternalCredentialProvider gatewayProvider = GatewayCredentialProvider(InterfaceControl.Info);
+                        ResolvedCredentials resolvedGateway = _credentialResolver.Resolve(new CredentialResolutionRequest
+                        {
+                            ConnectionInfo = InterfaceControl.Info,
+                            Force = Force,
+                            Target = ProtocolCredentialTarget.RdpGateway,
+                            OnePasswordReadAhead = gatewayOnePasswordRead,
+                            OnProviderError = msg => Event_ErrorOccured(this, msg, 0),
+                            OnLog = (msgClass, msg) => Runtime.MessageCollector.AddMessage(msgClass, msg)
+                        });
 
-                        // access secret server api if necessary
-                        if (gatewayProvider == ExternalCredentialProvider.DelineaSecretServer)
+                        if (connectionInfo.RDGatewayUseConnectionCredentials != RDGatewayUseConnectionCredentials.AccessToken)
                         {
-                            try
-                            {
-                                string RDGUserViaAPI = InterfaceControl.Info.RDGatewayUserViaAPI;
-                                ExternalConnectors.DSS.SecretServerInterface.FetchSecretFromServer($"{RDGUserViaAPI}", out gwu, out gwp, out gwd, out pkey);
-                            }
-                            catch (Exception ex)
-                            {
-                                Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                            }
-                        }
-                        else if (gatewayProvider == ExternalCredentialProvider.ClickstudiosPasswordState)
-                        {
-                            try
-                            {
-                                string RDGUserViaAPI = InterfaceControl.Info.RDGatewayUserViaAPI;
-                                ExternalConnectors.CPS.PasswordstateInterface.FetchSecretFromServer($"{RDGUserViaAPI}", out gwu, out gwp, out gwd, out pkey);
-                            }
-                            catch (Exception ex)
-                            {
-                                Event_ErrorOccured(this, "Passwordstate Interface Error: " + ex.Message, 0);
-                            }
-                        }
-                        else if (gatewayProvider == ExternalCredentialProvider.OnePassword)
-                        {
-                            try
-                            {
-                                string RDGUserViaAPI = InterfaceControl.Info.RDGatewayUserViaAPI;
-                                ExternalConnectors.OP.OnePasswordRead readAhead = _onePasswordGatewayRead;
-                                _onePasswordGatewayRead = null;
-                                ExternalConnectors.OP.OnePasswordCli.ReadPassword(readAhead, $"{RDGUserViaAPI}", ref gwu, ref gwp, ref gwd, ref pkey);
-                            }
-                            catch (ExternalConnectors.OP.OnePasswordCliException ex)
-                            {
-                                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.ECPOnePasswordCommandLine + ": " + ex.Arguments);
-                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPOnePasswordReadFailed + Environment.NewLine + ex.Message);
-                            }
-                            catch (Exception ex)
-                            {
-                                // Such as UriFormatException for an empty or malformed reference, or op not being installed
-                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPOnePasswordReadFailed + Environment.NewLine + ex.Message);
-                            }
-                        }
-                        else if (gatewayProvider == ExternalCredentialProvider.VaultOpenbao)
-                        {
-                            try {
-                                if (connectionInfo.VaultOpenbaoSecretEngine == VaultOpenbaoSecretEngine.Kv)
-                                    gwu = connectionInfo.RDGatewayUsername;
-                                ExternalConnectors.VO.VaultOpenbao.ReadPasswordRDP((int)connectionInfo.VaultOpenbaoSecretEngine, connectionInfo.VaultOpenbaoMount, connectionInfo.VaultOpenbaoRole, ref gwu, out gwp);
-                            } catch (ExternalConnectors.VO.VaultOpenbaoException ex) {
-                                Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                            }
-                        }
-
-
-                            if (connectionInfo.RDGatewayUseConnectionCredentials != RDGatewayUseConnectionCredentials.AccessToken)
-                        {
-                            _rdpClient.TransportSettings2.GatewayUsername = gwu;
-                            _rdpClient.TransportSettings2.GatewayPassword = gwp;
-                            _rdpClient.TransportSettings2.GatewayDomain = gwd;
+                            _rdpClient.TransportSettings2.GatewayUsername = resolvedGateway.Username;
+                            _rdpClient.TransportSettings2.GatewayPassword = resolvedGateway.Password;
+                            _rdpClient.TransportSettings2.GatewayDomain = resolvedGateway.Domain;
                         }
                         else
                         {
                             //TODO: should we check client version and throw if it is less than 7
                         }
-                        
+
                         break;
                     }
                 }
@@ -699,128 +658,35 @@ namespace mRemoteNG.Connection.Protocol.RDP
         {
             try
             {
-                if (Force.HasFlag(ConnectionInfo.Force.NoCredentials))
+                ExternalConnectors.OP.OnePasswordRead readAhead = _onePasswordRead;
+                _onePasswordRead = null;
+
+                ResolvedCredentials resolved = _credentialResolver.Resolve(new CredentialResolutionRequest
                 {
+                    ConnectionInfo = InterfaceControl?.Info ?? connectionInfo,
+                    Force = Force,
+                    Target = ProtocolCredentialTarget.Rdp,
+                    OnePasswordReadAhead = readAhead,
+                    OnProviderError = msg => Event_ErrorOccured(this, msg, 0),
+                    OnLog = (msgClass, msg) => Runtime.MessageCollector.AddMessage(msgClass, msg)
+                });
+
+                if (resolved.SkipCredentials)
                     return;
-                }
 
-                string userName = connectionInfo?.Username ?? "";
-                string domain = connectionInfo?.Domain ?? "";
-                string userViaApi = connectionInfo?.UserViaAPI ?? "";
-                string pkey = "";
-                //string password = (connectionInfo?.Password?.ConvertToUnsecureString() ?? "");
-                string password = (connectionInfo?.Password ?? "");
-
-                // access secret server api if necessary
-                if (InterfaceControl.Info.ExternalCredentialProvider == ExternalCredentialProvider.DelineaSecretServer)
-                {
-                    try
-                    {
-                        ExternalConnectors.DSS.SecretServerInterface.FetchSecretFromServer($"{userViaApi}", out userName, out password, out domain, out pkey);
-                    }
-                    catch (Exception ex)
-                    {
-                        Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                    }
-                }
-                else if (InterfaceControl.Info.ExternalCredentialProvider == ExternalCredentialProvider.ClickstudiosPasswordState)
-                {
-                    try
-                    {
-                        ExternalConnectors.CPS.PasswordstateInterface.FetchSecretFromServer($"{userViaApi}", out userName, out password, out domain, out pkey);
-                    }
-                    catch (Exception ex)
-                    {
-                        Event_ErrorOccured(this, "Passwordstate Interface Error: " + ex.Message, 0);
-                    }
-                }
-                else if (InterfaceControl.Info.ExternalCredentialProvider == ExternalCredentialProvider.OnePassword)
-                {
-                    try
-                    {
-                        ExternalConnectors.OP.OnePasswordRead readAhead = _onePasswordRead;
-                        _onePasswordRead = null;
-                        ExternalConnectors.OP.OnePasswordCli.ReadPassword(readAhead, $"{userViaApi}", ref userName, ref password, ref domain, ref pkey);
-                    }
-                    catch (ExternalConnectors.OP.OnePasswordCliException ex)
-                    {
-                        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.ECPOnePasswordCommandLine + ": " + ex.Arguments);
-                        Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPOnePasswordReadFailed + Environment.NewLine + ex.Message);
-                    }
-                }
-                else if (InterfaceControl.Info.ExternalCredentialProvider == ExternalCredentialProvider.VaultOpenbao) {
-                    try {
-                        if(connectionInfo.VaultOpenbaoSecretEngine == VaultOpenbaoSecretEngine.Kv)
-                            userName = connectionInfo?.Username ?? "";
-                        ExternalConnectors.VO.VaultOpenbao.ReadPasswordRDP((int)connectionInfo.VaultOpenbaoSecretEngine, connectionInfo?.VaultOpenbaoMount ?? "", connectionInfo?.VaultOpenbaoRole ?? "", ref userName, out password);
-                    } catch (ExternalConnectors.VO.VaultOpenbaoException ex) {
-                        Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                    }
-                }
-
-                if (string.IsNullOrEmpty(userName))
-                {
-                    switch (Properties.OptionsCredentialsPage.Default.EmptyCredentials)
-                    {
-                        case "windows":
-                            _rdpClient.UserName = Environment.UserName;
-                            break;
-                        case "custom" when !string.IsNullOrEmpty(Properties.OptionsCredentialsPage.Default.DefaultUsername):
-                            _rdpClient.UserName = Properties.OptionsCredentialsPage.Default.DefaultUsername;
-                            break;
-                        case "custom":
-                            try
-                            {
-                                ExternalConnectors.DSS.SecretServerInterface.FetchSecretFromServer(Properties.OptionsCredentialsPage.Default.UserViaAPIDefault, out userName, out password, out domain, out pkey);
-                                _rdpClient.UserName = userName;
-                            }
-                            catch (Exception ex)
-                            {
-                                Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                            }
-
-                            break;
-                    }
-                }
-                else
-                {
-                    _rdpClient.UserName = userName;
-                }
+                if (!string.IsNullOrEmpty(resolved.Username))
+                    _rdpClient.UserName = resolved.Username;
 
                 // Restricted Admin and Remote Credential Guard do not forward explicit passwords
                 // on protocol versions that support those modes. Skipping password assignment
                 // avoids potential NTLM fallback attempts that would fail for AD Protected Users.
-                if (ShouldAssignClearTextPassword(connectionInfo))
+                if (ShouldAssignClearTextPassword(connectionInfo) && !string.IsNullOrEmpty(resolved.Password))
                 {
-                    if (string.IsNullOrEmpty(password))
-                    {
-                        if (Properties.OptionsCredentialsPage.Default.EmptyCredentials == "custom")
-                        {
-                            if (Properties.OptionsCredentialsPage.Default.DefaultPassword != "")
-                            {
-                                _rdpClient.AdvancedSettings2.ClearTextPassword = OptionPasswords.Unprotect(Properties.OptionsCredentialsPage.Default.DefaultPassword);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        _rdpClient.AdvancedSettings2.ClearTextPassword = password;
-                    }
+                    _rdpClient.AdvancedSettings2.ClearTextPassword = resolved.Password;
                 }
 
-                if (string.IsNullOrEmpty(domain))
-                {
-                    _rdpClient.Domain = Properties.OptionsCredentialsPage.Default.EmptyCredentials switch
-                    {
-                        "windows" => Environment.UserDomainName,
-                        "custom" => Properties.OptionsCredentialsPage.Default.DefaultDomain,
-                        _ => _rdpClient.Domain
-                    };
-                }
-                else
-                {
-                    _rdpClient.Domain = domain;
-                }
+                if (!string.IsNullOrEmpty(resolved.Domain))
+                    _rdpClient.Domain = resolved.Domain;
             }
             catch (Exception ex)
             {

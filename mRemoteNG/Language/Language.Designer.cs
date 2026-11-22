@@ -2204,6 +2204,24 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Windows Credential Manager.
+        /// </summary>
+        internal static string ECPWindowsCredentialManager {
+            get {
+                return ResourceManager.GetString("ECPWindowsCredentialManager", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No credential found in Windows Credential Manager for target &apos;{0}&apos;..
+        /// </summary>
+        internal static string ECPWindowsCredentialManagerNotFound {
+            get {
+                return ResourceManager.GetString("ECPWindowsCredentialManagerNotFound", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Element.
         /// </summary>
         internal static string Element {

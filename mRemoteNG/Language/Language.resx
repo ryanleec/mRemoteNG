@@ -2558,6 +2558,12 @@ Nightly Channel includes Alphas, Betas &amp; Release Candidates.</value>
   <data name="ECPOnePasswordCommandLine" xml:space="preserve">
     <value>1Password command line</value>
   </data>
+  <data name="ECPWindowsCredentialManager" xml:space="preserve">
+    <value>Windows Credential Manager</value>
+  </data>
+  <data name="ECPWindowsCredentialManagerNotFound" xml:space="preserve">
+    <value>No credential found in Windows Credential Manager for target '{0}'.</value>
+  </data>
   <data name="ECPNone" xml:space="preserve">
     <value>None</value>
   </data>

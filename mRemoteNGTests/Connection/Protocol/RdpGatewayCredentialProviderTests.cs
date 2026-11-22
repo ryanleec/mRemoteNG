@@ -23,6 +23,7 @@ namespace mRemoteNGTests.Connection.Protocol
         [TestCase(ExternalCredentialProvider.ClickstudiosPasswordState)]
         [TestCase(ExternalCredentialProvider.DelineaSecretServer)]
         [TestCase(ExternalCredentialProvider.VaultOpenbao)]
+        [TestCase(ExternalCredentialProvider.WindowsCredentialManager)]
         public void TypedGatewayCredentialsAreNotReplacedFromTheConnectionsProvider(ExternalCredentialProvider connectionProvider)
         {
             ConnectionInfo info = Gateway(RDGatewayUseConnectionCredentials.No, connectionProvider, ExternalCredentialProvider.None);
@@ -34,9 +35,11 @@ namespace mRemoteNGTests.Connection.Protocol
         [TestCase(RDGatewayUseConnectionCredentials.No, ExternalCredentialProvider.OnePassword)]
         [TestCase(RDGatewayUseConnectionCredentials.No, ExternalCredentialProvider.ClickstudiosPasswordState)]
         [TestCase(RDGatewayUseConnectionCredentials.No, ExternalCredentialProvider.DelineaSecretServer)]
+        [TestCase(RDGatewayUseConnectionCredentials.No, ExternalCredentialProvider.WindowsCredentialManager)]
         [TestCase(RDGatewayUseConnectionCredentials.ExternalCredentialProvider, ExternalCredentialProvider.OnePassword)]
         [TestCase(RDGatewayUseConnectionCredentials.ExternalCredentialProvider, ExternalCredentialProvider.ClickstudiosPasswordState)]
         [TestCase(RDGatewayUseConnectionCredentials.ExternalCredentialProvider, ExternalCredentialProvider.DelineaSecretServer)]
+        [TestCase(RDGatewayUseConnectionCredentials.ExternalCredentialProvider, ExternalCredentialProvider.WindowsCredentialManager)]
         public void GatewayProviderIsReadWhenTheConnectionHasNone(
             RDGatewayUseConnectionCredentials mode,
             ExternalCredentialProvider gatewayProvider)
@@ -61,6 +64,7 @@ namespace mRemoteNGTests.Connection.Protocol
         [TestCase(ExternalCredentialProvider.ClickstudiosPasswordState)]
         [TestCase(ExternalCredentialProvider.DelineaSecretServer)]
         [TestCase(ExternalCredentialProvider.VaultOpenbao)]
+        [TestCase(ExternalCredentialProvider.WindowsCredentialManager)]
         [TestCase(ExternalCredentialProvider.None)]
         public void ExternalModeWithoutAGatewayProviderUsesTheConnectionsProvider(ExternalCredentialProvider connectionProvider)
         {
